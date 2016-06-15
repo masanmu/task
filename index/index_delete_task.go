@@ -175,6 +175,9 @@ func deleteIndex() error {
 		}
 		log.Printf("delete endpoint_counter, done, cnt %d\n", cnt)
 		err = deleteRRd(endpoint_counter)
+		if err != nil {
+			log.Println(err)
+		}
 		// statistics
 		proc.IndexDeleteCnt.PutOther("deleteCntEndpointCounter", cnt)
 	}
