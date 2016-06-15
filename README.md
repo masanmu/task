@@ -6,7 +6,7 @@ task是监控系统一个必要的辅助模块。有些功能，不适合与监�
 
 + index更新。包括图表索引的全量更新和垃圾索引清理(是否自动清理，由配置决定)。
 + falcon组件[自监控](http://book.open-falcon.com/zh/practice/monitor.html)数据采集。当前，定时任务了采集了 transfer、graph、task等组建的状态数据。
-
++ (fork)rrd数据库删除，在处理索引的同时会删除掉过期索引．
 ## Build
 
 我们提供了[最新的release包](https://github.com/open-falcon/task/releases)，你可以直接从这里下载。或者，你也可以按照如下方式进行源码编译，
