@@ -1,13 +1,18 @@
 package index
 
 import (
+	"fmt"
 	"log"
+	"os"
+	"strings"
 	"time"
 
 	Mdb "github.com/open-falcon/common/db"
+	cutils "github.com/open-falcon/common/utils"
 	cron "github.com/toolkits/cron"
 	ntime "github.com/toolkits/time"
 
+	"github.com/open-falcon/task/g"
 	"github.com/open-falcon/task/proc"
 )
 
@@ -133,20 +138,27 @@ func deleteIndex() error {
 	// endpoint_counter表
 	{
 		// select
-		rows, err := dbConn.Query("SELECT id, endpoint_id, counter FROM endpoint_counter WHERE ts < ?", lastTs)
+		rows, err := dbConn.Query("SELECT id, endpoint_id, counter,step,type FROM endpoint_counter WHERE ts < ?", lastTs)
 		if err != nil {
 			log.Println(err)
 			return err
 		}
-
+		endpoint_counter := make(map[string][]Mdb.GraphEndpointCounter)
 		cnt := 0
 		for rows.Next() {
 			item := &Mdb.GraphEndpointCounter{}
-			err := rows.Scan(&item.Id, &item.EndpointId, &item.Counter)
+			err := rows.Scan(&item.Id, &item.EndpointId, &item.Counter, &item.Step, &item.Type)
 			if err != nil {
 				log.Println(err)
 				return err
 			}
+			var endpoint string
+			err = dbConn.QueryRow("SELECT endpoint from endpoint where id = ?", int(item.EndpointId)).Scan(&endpoint)
+			if err != nil {
+				log.Println(err)
+				return err
+			}
+			endpoint_counter[endpoint] = append(endpoint_counter[endpoint], Mdb.GraphEndpointCounter{Id: item.Id, Step: item.Step, Type: item.Type, Counter: item.Counter, EndpointId: item.EndpointId})
 			log.Println("will delete endpoint_counter:", item)
 			cnt++
 		}
@@ -155,7 +167,6 @@ func deleteIndex() error {
 			log.Println(err)
 			return err
 		}
-
 		// delete
 		_, err = dbConn.Exec("DELETE FROM endpoint_counter WHERE ts < ?", lastTs)
 		if err != nil {
@@ -163,10 +174,34 @@ func deleteIndex() error {
 			return err
 		}
 		log.Printf("delete endpoint_counter, done, cnt %d\n", cnt)
-
+		err = deleteRRd(endpoint_counter)
 		// statistics
 		proc.IndexDeleteCnt.PutOther("deleteCntEndpointCounter", cnt)
 	}
 
 	return nil
+}
+
+func deleteRRd(endpoint_counter map[string][]Mdb.GraphEndpointCounter) (err error) {
+	cfg := g.Config()
+	base := cfg.RRd.Storage
+	for endpoint, counters := range endpoint_counter {
+		for counter := range counters {
+			metric_tag := strings.SplitN(counters[counter].Counter, "/", 2)
+			err, tags := cutils.SplitTagsString(metric_tag[len(metric_tag)-1])
+			if err != nil {
+				log.Println(err)
+			}
+			checksum := cutils.Checksum(endpoint, metric_tag[0], tags)
+			step := fmt.Sprintf("%d", counters[counter].Step)
+			rrdfile := base + "/" + checksum[0:2] + "/" + checksum + "_" + counters[counter].Type + "_" + step + ".rrd"
+			err = os.Remove(rrdfile)
+			if err != nil {
+				log.Println("file remove Error")
+			} else {
+				log.Println("file remove ok")
+			}
+		}
+	}
+	return
 }
